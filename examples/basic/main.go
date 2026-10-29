@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	cfg := glogs.DefaultConfig("xdmp-demo")
+	cfg := glogs.DefaultConfig("glogs-demo")
 	logger, err := glogs.New(cfg)
 	if err != nil {
 		panic(err)

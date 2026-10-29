@@ -1,9 +1,7 @@
 // Package glogs is a small structured logging facade for Go services.
 //
-// It provides logback-like features used by XDMP: named channels
-// (access/default/depend/app/error/event), per-channel rolling files,
-// ANSI colored console output, structured text/JSON output and request
-// context fields.
+// It provides named channels, per-channel rolling files, ANSI colored console
+// output, structured text/JSON output and request context fields.
 package glogs
 
 import (
@@ -17,7 +15,7 @@ import (
 	"sync"
 )
 
-// Channel is a named log channel (logback logger).
+// Channel is a named log channel.
 type Channel string
 
 const (
@@ -29,7 +27,7 @@ const (
 	ChannelEvent   Channel = "event"
 )
 
-// DefaultChannels are the platform channels, matching logback-spring.xml.
+// DefaultChannels is the default channel set.
 var DefaultChannels = []Channel{
 	ChannelAccess, ChannelDefault, ChannelDepend, ChannelApp, ChannelError, ChannelEvent,
 }
@@ -81,7 +79,7 @@ type Config struct {
 // DefaultConfig returns a configuration matching the platform defaults.
 func DefaultConfig(appName string) Config {
 	if appName == "" {
-		appName = "xdmp"
+		appName = "glogs"
 	}
 	base := filepath.Join("logs", appName, "common")
 	return Config{
@@ -114,7 +112,7 @@ func New(cfg Config) (*Logger, error) {
 		cfg.Dir = "logs"
 	}
 	if cfg.AppName == "" {
-		cfg.AppName = "xdmp"
+		cfg.AppName = "glogs"
 	}
 	if cfg.Level == 0 {
 		cfg.Level = slog.LevelInfo
@@ -194,7 +192,7 @@ func (l *Logger) Close() error {
 	return firstErr
 }
 
-// Stat builds a `key=value ...` line, matching CommonLog.stat().
+// Stat builds a `key=value ...` line.
 type Stat struct {
 	attrs []slog.Attr
 }

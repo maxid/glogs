@@ -11,7 +11,7 @@ import (
 func testConfig(t *testing.T) Config {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := DefaultConfig("xdmp-test")
+	cfg := DefaultConfig("glogs-test")
 	cfg.Dir = dir
 	for name, cc := range cfg.Channels {
 		cc.Path = filepath.Join(dir, "common", string(name), string(name)+".log")
