@@ -3,7 +3,8 @@
 Structured logging for Go services with named channels, rolling files, ANSI
 colors and request context fields.
 
-> Status: **v0.1.3** — usable core; API may still change before v1.0.
+> Status: **development snapshot (untagged)** — usable core; API may still change before v1.0.
+> No tags are published until a stable release; use commit pseudo-versions.
 > License: MIT.
 
 ## Features

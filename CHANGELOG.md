@@ -1,5 +1,8 @@
 # Changelog
 
+> Development snapshots are untagged; entries below are chronological.
+
+
 ## [Unreleased]
 
 ## [0.1.3] - 2026-10-29
