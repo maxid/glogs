@@ -4,7 +4,7 @@ Structured logging for Go services with logback-like features used by XDMP:
 named channels, rolling files, ANSI colors, text/JSON output and request
 context fields.
 
-> Status: **v0.1.0** — usable core; API may still change before v1.0.
+> Status: **v0.1.1** — usable core; API may still change before v1.0.
 > License: MIT.
 
 ## Features
