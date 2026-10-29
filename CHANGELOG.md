@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-29
+
+- Add `Version` constant (needed by platform version reporting).
+
 ## [0.1.0] - 2026-10-29
 
 - Initial release: named channels (access/default/depend/app/error/event),

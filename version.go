@@ -1,0 +1,4 @@
+package glogs
+
+// Version is the semantic version of this library.
+const Version = "0.1.1"
