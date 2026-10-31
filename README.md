@@ -22,6 +22,28 @@ colors and request context fields.
 - **HTTP access middleware** (`glogs/access`): method, URI, status, latency,
   client IP, trace id, optional body capture.
 
+## Async writes
+
+By default a log line is written synchronously: a slow disk delays the request that
+logged it. Set `Async` on a channel to move the write off the caller's goroutine:
+
+```go
+Channels: map[glogs.Channel]glogs.ChannelConfig{
+    glogs.ChannelApp: {Enabled: true, Async: true, AsyncBuffer: 4096, Path: "logs/app.log"},
+}
+```
+
+The queue is a **hard bound**. When it is full the line is dropped and counted —
+never queued without limit, never blocking the request. That trade-off is visible:
+
+```go
+stats, err := logger.AsyncStats(glogs.ChannelApp)
+// stats.Dropped, stats.Errors, stats.LastErr, stats.Pending
+```
+
+`Close` drains the queue (bounded by a 5s timeout) before closing the files, so
+shutdown does not silently discard accepted lines.
+
 ## Install
 
 ```bash

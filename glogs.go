@@ -65,6 +65,14 @@ type ChannelConfig struct {
 	MaxSize  int64 // bytes per file, default 50 MiB
 	MaxAge   int   // days, default 7
 	TotalCap int64 // bytes, default 500 MiB
+
+	// Async moves the file write off the caller's goroutine. The queue is
+	// bounded by AsyncBuffer; when it is full the line is dropped and counted
+	// rather than blocking the request. Off by default so an existing deployment
+	// keeps its current durability.
+	Async bool
+	// AsyncBuffer is the queue depth when Async is set. Default 1024.
+	AsyncBuffer int
 }
 
 // Config is the top-level logging configuration.
@@ -103,6 +111,7 @@ type Logger struct {
 	root     *slog.Logger
 	channels map[Channel]*slog.Logger
 	closers  []io.Closer
+	async    map[Channel]*asyncWriter
 	mu       sync.Mutex
 }
 
@@ -117,7 +126,7 @@ func New(cfg Config) (*Logger, error) {
 	if cfg.Level == 0 {
 		cfg.Level = slog.LevelInfo
 	}
-	l := &Logger{channels: make(map[Channel]*slog.Logger)}
+	l := &Logger{channels: make(map[Channel]*slog.Logger), async: map[Channel]*asyncWriter{}}
 
 	if cfg.Root.Enabled {
 		color := consoleColor(cfg.Root.Color)
@@ -155,7 +164,14 @@ func New(cfg Config) (*Logger, error) {
 			return nil, fmt.Errorf("glogs: init channel %s: %w", name, err)
 		}
 		l.closers = append(l.closers, rw)
-		fileHandler := newHandler(rw, cfg.Root.Format, false, cc.Level, string(name))
+
+		var sink io.Writer = rw
+		if cc.Async {
+			w := newAsyncWriter(rw, cc.AsyncBuffer)
+			l.async[name] = w
+			sink = w
+		}
+		fileHandler := newHandler(sink, cfg.Root.Format, false, cc.Level, string(name))
 		var h slog.Handler = fileHandler
 		if cc.Console {
 			consoleHandler := newHandler(os.Stdout, cfg.Root.Format, consoleColor(cfg.Root.Color), cc.Level, string(name))
@@ -164,6 +180,16 @@ func New(cfg Config) (*Logger, error) {
 		l.channels[name] = slog.New(h)
 	}
 	return l, nil
+}
+
+// AsyncStats reports drop and error counters for one channel. It returns an error
+// when that channel does not use an async writer.
+func (l *Logger) AsyncStats(channel Channel) (AsyncStats, error) {
+	w, ok := l.async[channel]
+	if !ok {
+		return AsyncStats{}, fmt.Errorf("glogs: channel %q is not async", channel)
+	}
+	return w.Stats(), nil
 }
 
 // Root returns the root logger (console).
@@ -179,10 +205,24 @@ func (l *Logger) Channel(name Channel) *slog.Logger {
 }
 
 // Close flushes and closes all file writers.
+// Close drains async writers, then closes the files. The drain is bounded: a disk
+// that stopped accepting writes must not hang shutdown, and unsent lines are
+// reported through AsyncStats instead of disappearing silently.
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), asyncDrainTimeout)
+	defer cancel()
+
 	var firstErr error
+	for _, w := range l.async {
+		if err := w.Close(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	l.async = map[Channel]*asyncWriter{}
+
 	for _, c := range l.closers {
 		if err := c.Close(); err != nil && firstErr == nil {
 			firstErr = err
