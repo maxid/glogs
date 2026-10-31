@@ -1,3 +1,5 @@
+English | [简体中文](README.zh-CN.md)
+
 # glogs
 
 Structured logging for Go services with named channels, rolling files, ANSI
