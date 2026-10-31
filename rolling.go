@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,10 +22,51 @@ type rollingWriter struct {
 	totalCap   int64
 	now        func() time.Time
 
+	// onError is told about every write, rotate and cleanup failure. slog drops
+	// handler errors on the floor, so without this a full disk loses log lines
+	// silently.
+	onError func(error)
+
+	errors  atomic.Int64
+	lastErr atomic.Pointer[string]
+
 	file  *os.File
 	size  int64
 	day   string
 	index int
+}
+
+// FileStats reports the failures a rolling writer has seen. A non-zero Errors with
+// an empty log file is the signature of a broken disk, not of a quiet service.
+type FileStats struct {
+	Errors  int64
+	LastErr string
+	Bytes   int64
+}
+
+// stats snapshots the failure counters.
+func (w *rollingWriter) stats() FileStats {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	out := FileStats{Errors: w.errors.Load(), Bytes: w.size}
+	if last := w.lastErr.Load(); last != nil {
+		out.LastErr = *last
+	}
+	return out
+}
+
+// recordError counts a failure and notifies the hook.
+func (w *rollingWriter) recordError(err error) {
+	if err == nil {
+		return
+	}
+	w.errors.Add(1)
+	message := err.Error()
+	w.lastErr.Store(&message)
+	if w.onError != nil {
+		w.onError(err)
+	}
 }
 
 func newRollingWriter(path string, maxSize int64, maxAgeDays int, totalCap int64) (*rollingWriter, error) {
@@ -66,17 +108,22 @@ func (w *rollingWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	if w.file == nil {
 		if err := w.open(); err != nil {
+			w.recordError(err)
 			return 0, err
 		}
 	}
 	today := w.now().Format("2006-01-02")
 	if today != w.day || (w.maxSize > 0 && w.size+int64(len(p)) > w.maxSize) {
 		if err := w.rotate(); err != nil {
+			w.recordError(err)
 			return 0, err
 		}
 	}
 	n, err := w.file.Write(p)
 	w.size += int64(n)
+	if err != nil {
+		w.recordError(err)
+	}
 	return n, err
 }
 
@@ -118,6 +165,7 @@ func (w *rollingWriter) cleanup() {
 	ext := filepath.Ext(w.path)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		w.recordError(fmt.Errorf("glogs: read log dir: %w", err))
 		return
 	}
 	type rotatedFile struct {

@@ -87,6 +87,11 @@ type Config struct {
 	// which is only appropriate for trusted local debugging: a logged credential
 	// lives in the file forever.
 	Redactor Redactor
+
+	// OnError is told about every file write, rotation and cleanup failure.
+	// slog discards handler errors, so this is the only way a broken disk becomes
+	// visible instead of silently dropping log lines.
+	OnError func(channel Channel, err error)
 }
 
 // DefaultConfig returns a configuration matching the platform defaults.
@@ -117,6 +122,7 @@ type Logger struct {
 	channels map[Channel]*slog.Logger
 	closers  []io.Closer
 	async    map[Channel]*asyncWriter
+	files    map[Channel]*rollingWriter
 	mu       sync.Mutex
 }
 
@@ -131,7 +137,11 @@ func New(cfg Config) (*Logger, error) {
 	if cfg.Level == 0 {
 		cfg.Level = slog.LevelInfo
 	}
-	l := &Logger{channels: make(map[Channel]*slog.Logger), async: map[Channel]*asyncWriter{}}
+	l := &Logger{
+		channels: make(map[Channel]*slog.Logger),
+		async:    map[Channel]*asyncWriter{},
+		files:    map[Channel]*rollingWriter{},
+	}
 
 	if cfg.Root.Enabled {
 		color := consoleColor(cfg.Root.Color)
@@ -169,6 +179,11 @@ func New(cfg Config) (*Logger, error) {
 			return nil, fmt.Errorf("glogs: init channel %s: %w", name, err)
 		}
 		l.closers = append(l.closers, rw)
+		if cfg.OnError != nil {
+			channel := name
+			rw.onError = func(err error) { cfg.OnError(channel, err) }
+		}
+		l.files[name] = rw
 
 		var sink io.Writer = rw
 		if cc.Async {
@@ -185,6 +200,19 @@ func New(cfg Config) (*Logger, error) {
 		l.channels[name] = slog.New(h)
 	}
 	return l, nil
+}
+
+// FileStats reports the write and rotation failures of one channel's file. It
+// returns an error when that channel writes no file.
+//
+// This is the answer to "slog ignores handler errors": a full disk shows up here
+// (and through Config.OnError) instead of disappearing.
+func (l *Logger) FileStats(channel Channel) (FileStats, error) {
+	w, ok := l.files[channel]
+	if !ok {
+		return FileStats{}, fmt.Errorf("glogs: channel %q has no file", channel)
+	}
+	return w.stats(), nil
 }
 
 // AsyncStats reports drop and error counters for one channel. It returns an error

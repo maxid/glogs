@@ -22,6 +22,24 @@ colors and request context fields.
 - **HTTP access middleware** (`glogs/access`): method, URI, status, latency,
   client IP, trace id, optional body capture.
 
+## Failure visibility
+
+`slog` discards the error a handler returns, so a full disk used to lose lines with
+no signal. A channel now reports it two ways:
+
+```go
+logger, _ := glogs.New(glogs.Config{
+    // ...
+    OnError: func(channel glogs.Channel, err error) { alert(channel, err) },
+})
+
+stats, _ := logger.FileStats(glogs.ChannelApp)
+// stats.Errors, stats.LastErr, stats.Bytes
+```
+
+`FileStats(file).Errors > 0` with a small `Bytes` is the signature of a broken disk
+rather than a quiet service.
+
 ## Redaction
 
 Nothing masks values unless you ask. A logged credential lives in the file forever,
