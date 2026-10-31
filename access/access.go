@@ -3,10 +3,7 @@ package access
 
 import (
 	"bytes"
-	"io"
-	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/maxid/glogs"
@@ -18,6 +15,16 @@ type Option func(*options)
 type options struct {
 	bodyLimit int
 	skip      func(*http.Request) bool
+	trusted   *trustedProxies
+}
+
+// WithTrustedProxies restricts which peers may set X-Forwarded-For / X-Real-IP.
+// Without it those headers are ignored, because a directly reachable client can
+// forge them and the logged client_ip would be attacker controlled.
+func WithTrustedProxies(cidrs ...string) Option {
+	return func(o *options) {
+		o.trusted = parseTrustedProxies(cidrs)
+	}
 }
 
 // WithBodyLimit enables request/response body capture up to n bytes.
@@ -51,7 +58,7 @@ func Middleware(logger *glogs.Logger, opts ...Option) func(http.Handler) http.Ha
 				"cost_ms", end.Sub(start).Milliseconds(),
 				"start_tm", start.Format("2006-01-02 15:04:05.000"),
 				"end_tm", end.Format("2006-01-02 15:04:05.000"),
-				"client_ip", clientIP(r),
+				"client_ip", clientIP(r, cfg.trusted),
 				"user_agent", r.UserAgent(),
 				"req_body", reqBody,
 				"resp_body", rec.body.String(),
@@ -62,22 +69,6 @@ func Middleware(logger *glogs.Logger, opts ...Option) func(http.Handler) http.Ha
 			logger.Channel(glogs.ChannelAccess).InfoContext(r.Context(), "access", attrs...)
 		})
 	}
-}
-
-func captureRequest(r *http.Request, limit int) string {
-	if limit <= 0 || r.Body == nil {
-		return ""
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, int64(limit)+1))
-	if err != nil {
-		return ""
-	}
-	_ = r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	if len(body) > limit {
-		return string(body[:limit]) + "...(truncated)"
-	}
-	return string(body)
 }
 
 type responseRecorder struct {
@@ -109,17 +100,3 @@ func (r *responseRecorder) Write(p []byte) (int, error) {
 }
 
 func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
-
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
