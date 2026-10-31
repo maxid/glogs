@@ -22,8 +22,9 @@ const (
 	ansiFaint  = "\x1b[2m"
 )
 
-// newHandler builds a text or JSON handler for a channel.
-func newHandler(w io.Writer, format Format, color bool, level slog.Level, channel string) slog.Handler {
+// newHandler builds a text or JSON handler for a channel. A nil redactor leaves
+// values untouched.
+func newHandler(w io.Writer, format Format, color bool, level slog.Level, channel string, redactor Redactor) slog.Handler {
 	if format == FormatJSON {
 		return &jsonHandler{inner: slog.NewJSONHandler(w, &slog.HandlerOptions{
 			Level: level,
@@ -34,11 +35,11 @@ func newHandler(w io.Writer, format Format, color bool, level slog.Level, channe
 				if a.Key == slog.MessageKey {
 					return slog.String("message", a.Value.String())
 				}
-				return a
+				return redactAttr(redactor, a)
 			},
 		}), channel: channel}
 	}
-	return &textHandler{mu: &sync.Mutex{}, out: w, color: color, level: level, channel: channel}
+	return &textHandler{mu: &sync.Mutex{}, out: w, color: color, level: level, channel: channel, redactor: redactor}
 }
 
 // multiHandler fans a record out to several handlers (file + console).
@@ -85,13 +86,14 @@ func (m *multiHandler) WithGroup(name string) slog.Handler {
 }
 
 type textHandler struct {
-	mu      *sync.Mutex
-	out     io.Writer
-	color   bool
-	level   slog.Level
-	channel string
-	attrs   []slog.Attr
-	groups  []string
+	mu       *sync.Mutex
+	out      io.Writer
+	color    bool
+	level    slog.Level
+	channel  string
+	attrs    []slog.Attr
+	groups   []string
+	redactor Redactor
 }
 
 func (h *textHandler) Enabled(_ context.Context, lv slog.Level) bool {
@@ -124,14 +126,14 @@ func (h *textHandler) Handle(ctx context.Context, r slog.Record) error {
 	b.WriteString(r.Message)
 
 	for _, a := range h.attrs {
-		writeAttr(&b, h.groups, a)
+		writeAttr(&b, h.groups, redactAttr(h.redactor, a))
 	}
 	r.Attrs(func(a slog.Attr) bool {
-		writeAttr(&b, h.groups, a)
+		writeAttr(&b, h.groups, redactAttr(h.redactor, a))
 		return true
 	})
 	for _, a := range contextAttrs(ctx) {
-		writeAttr(&b, h.groups, a)
+		writeAttr(&b, h.groups, redactAttr(h.redactor, a))
 	}
 	b.WriteByte('\n')
 
@@ -151,6 +153,23 @@ func (h *textHandler) WithGroup(name string) slog.Handler {
 	cp := *h
 	cp.groups = append(append([]string(nil), h.groups...), name)
 	return &cp
+}
+
+// redactAttr masks a sensitive attribute. A group keeps its recursion: the group
+// name itself may be insensitive while its children are not.
+func redactAttr(redactor Redactor, a slog.Attr) slog.Attr {
+	if redactor == nil {
+		return a
+	}
+	if a.Value.Kind() == slog.KindGroup {
+		group := a.Value.Group()
+		out := make([]any, 0, len(group))
+		for _, child := range group {
+			out = append(out, redactAttr(redactor, child))
+		}
+		return slog.Group(a.Key, out...)
+	}
+	return slog.Attr{Key: a.Key, Value: slog.AnyValue(redactor.RedactValue(a.Key, a.Value.Any()))}
 }
 
 type jsonHandler struct {

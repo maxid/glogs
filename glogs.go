@@ -82,6 +82,11 @@ type Config struct {
 	Root     ConsoleConfig
 	Level    slog.Level
 	Channels map[Channel]ChannelConfig
+
+	// Redactor masks sensitive attributes and bodies. Nil disables redaction,
+	// which is only appropriate for trusted local debugging: a logged credential
+	// lives in the file forever.
+	Redactor Redactor
 }
 
 // DefaultConfig returns a configuration matching the platform defaults.
@@ -130,7 +135,7 @@ func New(cfg Config) (*Logger, error) {
 
 	if cfg.Root.Enabled {
 		color := consoleColor(cfg.Root.Color)
-		h := newHandler(os.Stdout, cfg.Root.Format, color, cfg.Level, "root")
+		h := newHandler(os.Stdout, cfg.Root.Format, color, cfg.Level, "root", cfg.Redactor)
 		l.root = slog.New(h)
 	} else {
 		l.root = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: cfg.Level}))
@@ -171,10 +176,10 @@ func New(cfg Config) (*Logger, error) {
 			l.async[name] = w
 			sink = w
 		}
-		fileHandler := newHandler(sink, cfg.Root.Format, false, cc.Level, string(name))
+		fileHandler := newHandler(sink, cfg.Root.Format, false, cc.Level, string(name), cfg.Redactor)
 		var h slog.Handler = fileHandler
 		if cc.Console {
-			consoleHandler := newHandler(os.Stdout, cfg.Root.Format, consoleColor(cfg.Root.Color), cc.Level, string(name))
+			consoleHandler := newHandler(os.Stdout, cfg.Root.Format, consoleColor(cfg.Root.Color), cc.Level, string(name), cfg.Redactor)
 			h = &multiHandler{handlers: []slog.Handler{fileHandler, consoleHandler}}
 		}
 		l.channels[name] = slog.New(h)

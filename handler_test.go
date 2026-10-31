@@ -10,7 +10,7 @@ import (
 
 func TestTextHandlerFormat(t *testing.T) {
 	var buf bytes.Buffer
-	h := newHandler(&buf, FormatText, false, slog.LevelInfo, "app")
+	h := newHandler(&buf, FormatText, false, slog.LevelInfo, "app", nil)
 	lg := slog.New(h)
 	lg.Info("hello", "k", "v")
 	out := buf.String()
@@ -23,7 +23,7 @@ func TestTextHandlerFormat(t *testing.T) {
 
 func TestTextHandlerColor(t *testing.T) {
 	var buf bytes.Buffer
-	h := newHandler(&buf, FormatText, true, slog.LevelInfo, "app")
+	h := newHandler(&buf, FormatText, true, slog.LevelInfo, "app", nil)
 	slog.New(h).Error("boom")
 	if !strings.Contains(buf.String(), "\x1b[") {
 		t.Fatalf("expected ANSI colors, got %q", buf.String())
@@ -32,7 +32,7 @@ func TestTextHandlerColor(t *testing.T) {
 
 func TestJSONHandler(t *testing.T) {
 	var buf bytes.Buffer
-	h := newHandler(&buf, FormatJSON, false, slog.LevelInfo, "access")
+	h := newHandler(&buf, FormatJSON, false, slog.LevelInfo, "access", nil)
 	slog.New(h).Info("json", "status", 200)
 	var m map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {

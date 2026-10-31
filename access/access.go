@@ -16,6 +16,8 @@ type options struct {
 	bodyLimit int
 	skip      func(*http.Request) bool
 	trusted   *trustedProxies
+	loggable  []string
+	redactor  *BodyRedactor
 }
 
 // WithTrustedProxies restricts which peers may set X-Forwarded-For / X-Real-IP.
@@ -46,7 +48,13 @@ func Middleware(logger *glogs.Logger, opts ...Option) func(http.Handler) http.Ha
 				return
 			}
 			start := time.Now()
-			reqBody := captureRequest(r, cfg.bodyLimit)
+			var reqBody string
+			if requestLoggable(r, cfg.loggable) {
+				reqBody = cfg.redactor.body(captureRequest(r, cfg.bodyLimit))
+			} else {
+				// Still drain nothing: the handler must receive the body untouched.
+				reqBody = ""
+			}
 			rec := &responseRecorder{ResponseWriter: w, limit: cfg.bodyLimit}
 			next.ServeHTTP(rec, r)
 			end := time.Now()
@@ -61,7 +69,7 @@ func Middleware(logger *glogs.Logger, opts ...Option) func(http.Handler) http.Ha
 				"client_ip", clientIP(r, cfg.trusted),
 				"user_agent", r.UserAgent(),
 				"req_body", reqBody,
-				"resp_body", rec.body.String(),
+				"resp_body", cfg.responseBody(rec),
 			}
 			if v := r.Header.Get("X-Trace-Id"); v != "" {
 				attrs = append(attrs, "trace_id", v)

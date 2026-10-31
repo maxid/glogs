@@ -22,6 +22,38 @@ colors and request context fields.
 - **HTTP access middleware** (`glogs/access`): method, URI, status, latency,
   client IP, trace id, optional body capture.
 
+## Redaction
+
+Nothing masks values unless you ask. A logged credential lives in the file forever,
+so production should set a redactor:
+
+```go
+logger, err := glogs.New(glogs.Config{
+    AppName:  "xdmp",
+    Redactor: glogs.NewMaskRedactor("", "deviceSecret"), // "" = default mask
+})
+```
+
+It matches attribute keys case-insensitively against a deny list
+(`password`, `*token*`, `authorization`, `cookie`, `idCard`, … plus extra keys) and
+masks JSON bodies field by field at any depth. Groups are walked too, so
+`slog.Group("auth", "accessToken", …)` is covered.
+
+The access middleware applies the same policy to captured bodies:
+
+```go
+access.Middleware(logger,
+    access.WithBodyLimit(1024),
+    access.WithBodyRedactor(func(body string) string {
+        return redactor.RedactBody([]byte(body), false)
+    }),
+    access.WithLoggableContentTypes("application/json", "text/"),
+)
+```
+
+Bodies are only captured for allow-listed content types; an undeclared or binary
+type is skipped rather than guessed at.
+
 ## Async writes
 
 By default a log line is written synchronously: a slow disk delays the request that
