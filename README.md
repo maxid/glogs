@@ -22,6 +22,26 @@ colors and request context fields.
 - **HTTP access middleware** (`glogs/access`): method, URI, status, latency,
   client IP, trace id, optional body capture.
 
+## Bridging other loggers
+
+Third-party packages rarely log through `slog`. `glogs/bridge` turns their output
+into channel records so one process keeps one format, one file set and one
+redaction policy:
+
+```go
+// logrus / zerolog / zap, or anything that writes to an io.Writer
+logrus.SetOutput(bridge.NewWriter(logger, bridge.Options{Source: "logrus", SniffLevel: true}))
+
+// the standard library: one call covers every package that calls log.Printf
+restore := bridge.Stdlib(logger, bridge.Options{Channel: glogs.ChannelDepend, Source: "stdlib"})
+defer restore()
+```
+
+A bridge sees **lines**, so it cannot recover structured fields; prefer a native
+adapter when a library offers one (`slog`, `zapcore.Core`, a logrus `Hook`). See
+[`bridge/README.md`](bridge/README.md) for the rules, including the one that
+matters most: **message text is not redacted**, only attributes are.
+
 ## Failure visibility
 
 `slog` discards the error a handler returns, so a full disk used to lose lines with
