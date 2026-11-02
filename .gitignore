@@ -8,3 +8,11 @@
 .gocache/
 # test runs write rotated logs next to the package that produced them
 access/logs/
+
+# build outputs — nothing compiled belongs in the repository (AGENTS.md §6)
+*.exe
+*.so
+*.dylib
+*.a
+*.prof
+coverage.*
