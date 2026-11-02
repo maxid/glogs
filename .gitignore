@@ -6,3 +6,5 @@
 .vscode/
 .DS_Store
 .gocache/
+# test runs write rotated logs next to the package that produced them
+access/logs/
