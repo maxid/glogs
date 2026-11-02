@@ -78,14 +78,16 @@ func TestGoldenRollingNames(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
 
-	writer, err := newRollingWriter(path, 10, 7, 1<<20)
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+
+	// The clock has to be in place before the file is opened: the writer dates the
+	// open file, so installing it later would rotate under the real date.
+	writer, err := newRollingWriterWith(path, 10, 7, 1<<20, withClock(clock))
 	if err != nil {
 		t.Fatalf("writer: %v", err)
 	}
 	defer writer.Close()
-
-	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	writer.now = func() time.Time { return now }
 
 	// Exceed maxSize so the file rotates.
 	if _, err := writer.Write([]byte("0123456789abc")); err != nil {

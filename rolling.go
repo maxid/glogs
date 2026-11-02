@@ -70,12 +70,33 @@ func (w *rollingWriter) recordError(err error) {
 }
 
 func newRollingWriter(path string, maxSize int64, maxAgeDays int, totalCap int64) (*rollingWriter, error) {
+	return newRollingWriterWith(path, maxSize, maxAgeDays, totalCap)
+}
+
+// rollingOption adjusts a writer before it opens its file.
+type rollingOption func(*rollingWriter)
+
+// withClock replaces the wall clock. It must be passed at construction: the writer
+// reads the clock when it opens the file, so a clock installed afterwards would leave
+// the first file dated and rotated by the real time.
+func withClock(now func() time.Time) rollingOption {
+	return func(w *rollingWriter) {
+		if now != nil {
+			w.now = now
+		}
+	}
+}
+
+func newRollingWriterWith(path string, maxSize int64, maxAgeDays int, totalCap int64, opts ...rollingOption) (*rollingWriter, error) {
 	w := &rollingWriter{
 		path:       path,
 		maxSize:    maxSize,
 		maxAgeDays: maxAgeDays,
 		totalCap:   totalCap,
 		now:        time.Now,
+	}
+	for _, opt := range opts {
+		opt(w)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
